@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../ResBac-Backend"
+		},
+		{
+			"path": "../ResBac-FrontEndLei"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}
