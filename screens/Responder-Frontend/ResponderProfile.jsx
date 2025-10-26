@@ -1,44 +1,160 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import config from '../../utils/config';
 import NewHeader from '../Components/ResponderComponents/NewHeader';
 import NewBottomNav from '../Components/ResponderComponents/NewBottomNav';
 
+const DEFAULT_PROFILE =
+  'https://static.vecteezy.com/system/resources/previews/021/548/095/original/default-profile-picture-avatar-user-avatar-icon-person-icon-head-icon-profile-picture-icons-default-anonymous-user-male-and-female-businessman-photo-placeholder-social-network-avatar-portrait-free-vector.jpg';
+
 const ResponderProfile = ({ navigation }) => {
+  const [responder, setResponder] = useState(null);
+  const [profileImage, setProfileImage] = useState('');
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Log out',
-      'Are you sure you want to log out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log out', style: 'destructive', onPress: () => navigation.navigate('Login') }
-      ]
-    );
+  // Fetch responder profile
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const storedUser = await AsyncStorage.getItem('user');
+        const token = await AsyncStorage.getItem('token');
+        if (!storedUser || !token) {
+          navigation.navigate('Login');
+          return;
+        }
+
+        const { id } = JSON.parse(storedUser);
+        const res = await fetch(`${config.API_BASE_URL}/api/responders/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Failed to fetch profile');
+
+        setResponder(data);
+        setProfileImage(data.profile_image_url || '');
+      } catch (err) {
+        console.error('Failed to fetch responder profile:', err);
+        Alert.alert('Error', 'Unable to load profile data.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
+  // Compute image URL
+  const profileImageUrl =
+    profileImage.startsWith('http') ||
+    profileImage.startsWith('data:') ||
+    profileImage.startsWith('blob:')
+      ? profileImage
+      : `${config.API_BASE_URL}${profileImage || ''}` || DEFAULT_PROFILE;
+
+  // Logout function
+  const handleLogout = async () => {
+    Alert.alert('Log out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log out',
+        style: 'destructive',
+        onPress: async () => {
+          const token = await AsyncStorage.getItem('token');
+          try {
+            await fetch(`${config.API_BASE_URL}/api/logout`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+          } catch (err) {
+            console.warn('Logout request failed:', err);
+          } finally {
+            await AsyncStorage.removeItem('user');
+            await AsyncStorage.removeItem('token');
+            navigation.navigate('Login');
+          }
+        },
+      },
+    ]);
   };
 
-  const handlePasswordUpdate = () => {
+  // Handle password update
+  const handlePasswordUpdate = async () => {
     if (newPassword !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
-    Alert.alert('Success', 'Password updated!');
-    setShowPasswordForm(false);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${config.API_BASE_URL}/api/residents/change-password`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+          new_password_confirmation: confirmPassword,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        Alert.alert('Success', data.message || 'Password updated successfully!');
+        setShowPasswordForm(false);
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        Alert.alert('Error', data.message || 'Failed to update password');
+      }
+    } catch (err) {
+      console.error('Error updating password:', err);
+      Alert.alert('Error', 'Something went wrong');
+    }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.profileContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#1041BC" />
+        <Text style={{ marginTop: 10, color: '#333' }}>Loading profile...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.profileContainer}>
-      {/* Header */}
       <NewHeader navigation={navigation} />
 
-      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {/* Title Row */}
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Title */}
         <View style={styles.profileTitleRow}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Image source={require('../../assets/backbutton.png')} style={styles.backButtonImg} />
@@ -46,18 +162,24 @@ const ResponderProfile = ({ navigation }) => {
           <Text style={styles.profileTitle}>Profile</Text>
         </View>
 
-        {/* Top Container: Avatar, Name, Edit Profile */}
+        {/* Top Info */}
         <View style={styles.topContainer}>
           <View style={styles.profileAvatar}>
-            <Text style={styles.avatarEmoji}>👤</Text>
+            <Image
+              source={{ uri: profileImageUrl }}
+              style={{ width: 80, height: 80, borderRadius: 40 }}
+              onError={(e) => (e.nativeEvent.target.src = DEFAULT_PROFILE)}
+            />
           </View>
-          <Text style={styles.profileName}>User Name</Text>
+          <Text style={styles.profileName}>
+            {responder ? `${responder.first_name} ${responder.last_name}` : 'Loading...'}
+          </Text>
           <TouchableOpacity onPress={() => navigation.navigate('ResponderEditProfile')}>
             <Text style={styles.editProfileText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Info Container */}
+        {/* Basic Info */}
         <View style={styles.infoContainer}>
           <View style={styles.infoHeader}>
             <Text style={styles.infoHeaderIcon}>i</Text>
@@ -66,61 +188,20 @@ const ResponderProfile = ({ navigation }) => {
 
           {!showPasswordForm ? (
             <View style={styles.infoContent}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Full Name:</Text>
-                <Text style={styles.infoValue}>-</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Role:</Text>
-                <Text style={styles.infoValue}>-</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Team:</Text>
-                <Text style={styles.infoValue}>-</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Emp ID:</Text>
-                <Text style={styles.infoValue}>-</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Email:</Text>
-                <Text style={styles.infoValue}>-</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Phone:</Text>
-                <Text style={styles.infoValue}>-</Text>
-              </View>
+              <InfoRow label="Full Name" value={`${responder?.first_name || ''} ${responder?.last_name || ''}`} />
+              <InfoRow label="Role" value={responder?.role_name || '-'} />
+              <InfoRow label="Team" value={`Team ${responder?.team || '-'}`} />
+              <InfoRow label="Address" value={responder?.address || '-'} />
+              <InfoRow label="Email" value={responder?.email || '-'} />
+              <InfoRow label="Phone" value={responder?.contact_num || '-'} />
             </View>
           ) : (
             <View style={styles.passwordFormContainer}>
               <Text style={styles.resetPasswordTitle}>Reset Password</Text>
-              <Text style={styles.label}>Current Password:</Text>
-              <TextInput
-                style={styles.input}
-                value={currentPassword}
-                onChangeText={setCurrentPassword}
-                placeholder="Current Password"
-                secureTextEntry
-                placeholderTextColor="#999"
-              />
-              <Text style={styles.label}>New Password:</Text>
-              <TextInput
-                style={styles.input}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                placeholder="New Password"
-                secureTextEntry
-                placeholderTextColor="#999"
-              />
-              <Text style={styles.label}>Confirm Password:</Text>
-              <TextInput
-                style={styles.input}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Confirm Password"
-                secureTextEntry
-                placeholderTextColor="#999"
-              />
+              <PasswordInput label="Current Password" value={currentPassword} onChange={setCurrentPassword} />
+              <PasswordInput label="New Password" value={newPassword} onChange={setNewPassword} />
+              <PasswordInput label="Confirm Password" value={confirmPassword} onChange={setConfirmPassword} />
+
               <TouchableOpacity style={styles.saveBtn} onPress={handlePasswordUpdate}>
                 <Text style={styles.saveBtnText}>Confirm</Text>
               </TouchableOpacity>
@@ -131,7 +212,6 @@ const ResponderProfile = ({ navigation }) => {
           )}
         </View>
 
-        {/* Action Buttons */}
         {!showPasswordForm && (
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.changePasswordBtn} onPress={() => setShowPasswordForm(true)}>
@@ -144,11 +224,33 @@ const ResponderProfile = ({ navigation }) => {
         )}
       </ScrollView>
 
-      {/* Bottom Navigation */}
       <NewBottomNav navigation={navigation} />
     </View>
   );
 };
+
+// Reusable small components
+const InfoRow = ({ label, value }) => (
+  <View style={styles.infoRow}>
+    <Text style={styles.infoLabel}>{label}:</Text>
+    <Text style={styles.infoValue}>{value}</Text>
+  </View>
+);
+
+const PasswordInput = ({ label, value, onChange }) => (
+  <>
+    <Text style={styles.label}>{label}</Text>
+    <TextInput
+      style={styles.input}
+      value={value}
+      onChangeText={onChange}
+      placeholder={label}
+      secureTextEntry
+      placeholderTextColor="#999"
+    />
+  </>
+);
+
 
 const styles = StyleSheet.create({
   profileContainer: {

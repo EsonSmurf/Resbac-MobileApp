@@ -1,17 +1,57 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import NewHeader from '../Components/ResponderComponents/NewHeader';
 import NewBottomNav from '../Components/ResponderComponents/NewBottomNav';
+import { apiFetch } from '../../utils/apiFetch';
+import config from '../../utils/config';
 
 const ResponderReports = ({ navigation }) => {
-  const [reports] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [assignedIncidents, setAssignedIncidents] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchReports = async () => {
+      try {
+        const data = await apiFetch(`${config.API_BASE_URL}/api/responder/reports`);
+        const reportsArray = Array.isArray(data) ? data : Object.values(data);
+        setReports(reportsArray);
+        setAssignedIncidents(reportsArray);
+      } catch (err) {
+        console.error('Failed to load reports:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchReports();
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      setReports(prev => [e.detail, ...prev]);
+      setAssignedIncidents(prev => [e.detail, ...prev]);
+      
+      setTimeout(() => {
+        setAssignedIncidents(prev => prev.filter(i => i.id !== e.detail.id));
+      }, 5000);
+    };
+
+    // Web had a custom event for Echo; for RN use your Echo setup if needed.
+    // Example (pseudo):
+    // getEcho().then(echo => {
+    //   echo.private(`responder`).listen('IncidentAssigned', (payload) => handler({ detail: payload.incident }));
+    // });
+    // return () => echo.leave('responder');
+  }, []);
 
   const getStatusStyle = (status) => {
     if (!status) return styles.statusPending;
-    const normalized = String(status).toLowerCase();
+    const normalized = String(status).toLowerCase().replace(/\s+/g, '-');
     if (normalized.includes('cancel')) return styles.statusCancelled;
     if (normalized.includes('resolve')) return styles.statusResolved;
-    if (normalized.includes('route') || normalized.includes('en route')) return styles.statusEnroute;
+    if (normalized.includes('route') || normalized.includes('en-route')) return styles.statusEnroute;
+    if (normalized.includes('on-scene') || normalized.includes('on scene')) return styles.statusOnScene;
     return styles.statusPending;
   };
 
@@ -21,39 +61,47 @@ const ResponderReports = ({ navigation }) => {
     if (s.includes('cancel')) return 'Cancelled';
     if (s.includes('resolve')) return 'Resolved';
     if (s.includes('route') || s.includes('en route')) return 'En Route';
+    if (s.includes('on scene')) return 'On Scene';
     return 'Pending';
   };
 
   return (
     <View style={styles.reportsContainer}>
-      {/* Header */}
       <NewHeader navigation={navigation} />
 
-      {/* Title row */}
       <View style={styles.titleContainer}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Image source={require('../../assets/backbutton.png')} style={styles.backButtonImg} />
         </TouchableOpacity>
-        <Text style={styles.title}>Reports</Text>
+        <Text style={styles.title}>Assigned Reports</Text>
       </View>
 
-      {/* Reports card */}
       <View style={styles.reportsCard}>
-        {reports.length > 0 ? (
+        {loading ? (
+          <ActivityIndicator size="large" color="#3498db" style={styles.loadingIndicator} />
+        ) : reports.length > 0 ? (
           <ScrollView style={styles.reportsList} showsVerticalScrollIndicator={false}>
             {reports.map((report) => (
-              <View key={report.id} style={styles.reportRow}>
+              <TouchableOpacity
+                key={report.id}
+                style={styles.reportRow}
+                onPress={() => navigation.navigate('ResponderViewReport', { report })}
+              >
                 <View style={styles.reportInfo}>
-                  <Text style={styles.reportDatetime}>{report.dateTime}</Text>
+                  <Text style={styles.reportDatetime}>{report.date}</Text>
                   <Text style={styles.reportIncident}>
-                    Incident Type: <Text style={styles.incidentType}>{report.incidentType}</Text>
+                    Incident Type: <Text style={styles.incidentType}>{report.type}</Text>
                   </Text>
-                  <Text style={styles.reportLocation}>{report.location}</Text>
+                  <Text style={styles.reportLocation}>
+                    {report.landmark || (report.latitude && report.longitude ? `${report.latitude}, ${report.longitude}` : "Unknown Location")}
+                  </Text>
                 </View>
-                {report.status ? (
-                  <Text style={[styles.statusLabel, getStatusStyle(report.status)]}>{prettyStatus(report.status)}</Text>
-                ) : null}
-              </View>
+                {report.status && (
+                  <Text style={[styles.statusLabel, getStatusStyle(report.status)]}>
+                    {prettyStatus(report.status)}
+                  </Text>
+                )}
+              </TouchableOpacity>
             ))}
           </ScrollView>
         ) : (
@@ -61,7 +109,6 @@ const ResponderReports = ({ navigation }) => {
         )}
       </View>
 
-      {/* Bottom Navigation */}
       <NewBottomNav navigation={navigation} />
     </View>
   );
@@ -96,10 +143,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  backButtonIcon: {
-    fontSize: 20,
-    color: '#333',
-  },
   backButtonImg: {
     width: 28,
     height: 28,
@@ -118,6 +161,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     paddingVertical: 8,
     minHeight: 320,
+  },
+  loadingIndicator: {
+    marginTop: 40,
   },
   reportsList: {
   },
@@ -158,6 +204,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   statusEnroute: { color: '#f39c12' },
+  statusOnScene: { color: '#e67e22' },
   statusCancelled: { color: '#e74c3c' },
   statusResolved: { color: '#27ae60' },
   statusPending: { color: '#7f8c8d' },
@@ -172,5 +219,3 @@ const styles = StyleSheet.create({
 });
 
 export default ResponderReports;
-
-

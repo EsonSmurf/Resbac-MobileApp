@@ -13,8 +13,7 @@ const Announcement = ({ navigation }) => {
   useEffect(() => {
     const fetchAnnouncements = async () => {
       try {
-        const data = await apiFetch(`${config.API_BASE_URL}/api/resident/announcement`);
-        // or `${process.env.REACT_APP_URL}/api/announcements` depending on your setup
+        const data = await apiFetch(`${config.API_BASE_URL}/api/resident/announcements`);
         setAnnouncements(data);
       } catch (err) {
         console.error('Failed to fetch announcements:', err);
@@ -25,46 +24,64 @@ const Announcement = ({ navigation }) => {
 
     fetchAnnouncements();
   }, []);
+
+  if (loading) {
+    return (
+      <View style={styles.announcementContainer}>
+        <Header navigation={navigation} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#e53935" />
+          <Text style={styles.loadingText}>Loading announcements...</Text>
+        </View>
+        <BottomNav navigation={navigation} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.announcementContainer}>
-      {/* Header */}
       <Header navigation={navigation} />
       
       <View style={styles.titleContainer}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Image source={backButtonImg} style={styles.backButtonIcon} />
         </TouchableOpacity>
-        <Text style={styles.title}>Announcement</Text>
+        <Text style={styles.title}>Announcements</Text>
       </View>
 
-      {/* Announcements Container */}
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {announcements.length === 0 ? (
           <View style={styles.cardContainer}>
             <View style={styles.announcementCard}>
               <Text style={styles.emptyText}>No announcements available.</Text>
             </View>
-            <View style={styles.announcementCard}>
-              <Text style={styles.emptyText}>No announcements available.</Text>
-            </View>
-            <View style={styles.announcementCard}>
-              <Text style={styles.emptyText}>No announcements available.</Text>
-            </View>
           </View>
         ) : (
-          announcements.map((item) => (
-            <View key={item.id} style={styles.announcementCard}>
-              <Text style={styles.announcementTitle}>{item.title}</Text>
-              <View style={styles.announcementImgBox}>
-                <Image source={{ uri: item.image }} style={styles.announcementImg} />
+          <View style={styles.cardContainer}>
+            {announcements.map((item) => (
+              <View key={item.id} style={styles.announcementCard}>
+                <Text style={styles.announcementTitle}>{item.title}</Text>
+                <Text style={styles.announcementContent}>{item.content}</Text>
+                <Text style={styles.announcementPoster}>Posted by: {item.poster?.name || 'Admin'}</Text>
+                <Text style={styles.announcementDate}>{new Date(item.posted_at).toLocaleString()}</Text>
+
+                {item.images?.length > 0 && (
+                  <View style={styles.announcementImageContainer}>
+                    {item.images.map(img => (
+                      <Image 
+                        key={img.id} 
+                        source={{ uri: `${config.API_BASE_URL}${img.file_path}` }} 
+                        style={styles.announcementImg} 
+                      />
+                    ))}
+                  </View>
+                )}
               </View>
-              <Text style={styles.announcementDate}>{item.date}</Text>
-            </View>
-          ))
+            ))}
+          </View>
         )}
       </ScrollView>
 
-      {/* BOTTOM NAVIGATION */}
       <BottomNav navigation={navigation} />
     </View>
   );
@@ -76,6 +93,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f8fa',
     minHeight: '100%',
     position: 'relative',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
   },
   titleContainer: {
     flexDirection: 'row',
@@ -121,25 +148,33 @@ const styles = StyleSheet.create({
     fontSize: 20,
     marginBottom: 10,
     color: '#222',
-    margin: 0,
   },
-  announcementImgBox: {
-    width: '100%',
-    height: 140,
-    borderRadius: 12,
-    overflow: 'hidden',
+  announcementContent: {
+    fontSize: 14,
+    color: '#666',
     marginBottom: 10,
+    lineHeight: 20,
   },
-  announcementImg: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+  announcementPoster: {
+    fontSize: 12,
+    color: '#888',
+    marginBottom: 5,
   },
   announcementDate: {
     color: '#222',
     fontSize: 14,
     marginTop: 2,
-    margin: 0,
+  },
+  announcementImageContainer: {
+    marginTop: 10,
+    width: '100%',
+  },
+  announcementImg: {
+    width: '100%',
+    height: 140,
+    borderRadius: 12,
+    resizeMode: 'cover',
+    marginBottom: 8,
   },
   emptyText: {
     textAlign: 'center',
@@ -150,4 +185,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default Announcement; 
+export default Announcement;

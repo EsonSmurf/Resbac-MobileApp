@@ -1,20 +1,39 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Header from '../Components/ResidentComponents/Header';
 import BottomNav from '../Components/ResidentComponents/BottomNav';
 
 function Arrived({ navigation, route }) {
+  const [location, setLocation] = useState('Fetching location...');
+  const [statusMessage, setStatusMessage] = useState('Responder is on their way');
+
+  // ✅ Simulate the location fetching like in your React.js version
+  useEffect(() => {
+    // Simulate fetching current location from backend or API
+    const fetchLocation = async () => {
+      try {
+        // Placeholder example (replace with actual location logic or API later)
+        setTimeout(() => {
+          setLocation('Brgy. Mabini Street, Zone 3, Davao City');
+        }, 1500);
+      } catch (error) {
+        console.error('Failed to fetch location:', error);
+        setLocation('Unable to fetch location');
+      }
+    };
+
+    fetchLocation();
+  }, []);
+
   return (
     <View style={styles.arrivedContainer}>
       {/* Header */}
       <Header navigation={navigation} />
-      
+
       {/* Map Background */}
       <View style={styles.mapBackground}>
-        {/* Map content will be rendered here when backend API is integrated */}
-        <View style={styles.mapPlaceholder}>
-          {/* TODO: Replace with actual map tiles or API integration */}
-        </View>
+        {/* TODO: Replace with actual map API (e.g., react-native-maps) */}
+        <View style={styles.mapPlaceholder}></View>
       </View>
 
       {/* Status Card Overlay */}
@@ -23,11 +42,11 @@ function Arrived({ navigation, route }) {
           <View style={styles.locationInfo}>
             <Text style={styles.locationIcon}>📍</Text>
             <View style={styles.locationText}>
-              <Text style={styles.locationAddress}>Location</Text>
+              <Text style={styles.locationAddress}>{location}</Text>
             </View>
           </View>
           <View style={styles.statusMessage}>
-            <Text style={styles.statusText}>Responder is on their way</Text>
+            <Text style={styles.statusText}>{statusMessage}</Text>
           </View>
         </View>
       </View>

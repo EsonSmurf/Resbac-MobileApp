@@ -1,9 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
+import NavigationListener from "./utils/NavigationListener";
 import { StyleSheet, Text, View } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { requestNotificationPermissions, createNotificationChannel } from './utils/expoNotification';
 import Login from './screens/LoginScreen/Login';
 import Registration from './screens/Resident-Frontend/Registration';
+import ForgotPassword from './screens/LoginScreen/ForgotPassword';
+
 import Dashboard from './screens/Resident-Frontend/Dashboard';
 import Profile from './screens/Resident-Frontend/Profile';
 import Notification from './screens/Resident-Frontend/Notification';
@@ -25,9 +30,29 @@ import ResponderProfile from './screens/Responder-Frontend/ResponderProfile';
 import ResponderReports from './screens/Responder-Frontend/ResponderReports';
 import ResponderViewReport from './screens/Responder-Frontend/ResponderViewReport';
 import { NAVIGATION_CONFIG } from './utils/formConfig';
+import React from 'react';
+
+// Configure notification behavior
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 export default function App() {
   const Stack = createNativeStackNavigator();
+
+  // Initialize notifications
+  React.useEffect(() => {
+    const initializeNotifications = async () => {
+      await requestNotificationPermissions();
+      await createNotificationChannel();
+    };
+    
+    initializeNotifications();
+  }, []);
 
   // Component mapping for dynamic navigation
   const componentMap = {
@@ -57,6 +82,8 @@ export default function App() {
 
   return (
     <NavigationContainer>
+       <NavigationListener />
+       
       <Stack.Navigator 
         initialRouteName={NAVIGATION_CONFIG.initialRoute} 
         screenOptions={NAVIGATION_CONFIG.screenOptions}

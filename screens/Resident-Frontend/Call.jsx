@@ -1,176 +1,202 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Echo from 'laravel-echo';
-import Pusher from 'pusher-js/react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, TouchableOpacity, Image, StyleSheet, Modal, Alert, PermissionsAndroid } from 'react-native';
+import RtcEngine, { ChannelProfile, ClientRole } from 'react-native-agora';
+import { apiFetch } from '../../utils/apiFetch';
 import config from '../../utils/config';
+import endCallIcon from '../../assets/endcall.png';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const Call = ({ navigation, route }) => {
-  const [incidentType, setIncidentType] = useState(route?.params?.incidentType || '');
-  const [callStatus, setCallStatus] = useState('idle'); // idle, calling, connected, ended
+function Call({ navigation, route }) {
+  const { incidentType, incidentId } = route.params || {};
+  const [callStatus, setCallStatus] = useState('calling');
   const [callDuration, setCallDuration] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isSpeakerOn, setIsSpeakerOn] = useState(false);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
-  const [isOnHold, setIsOnHold] = useState(false);
-  const [echo, setEcho] = useState(null);
+  const [showUnansweredModal, setShowUnansweredModal] = useState(false);
+  const [residentId, setResidentId] = useState(null);
+  const [engine, setEngine] = useState(null);
+
   const timerRef = useRef(null);
 
-  // Setup Laravel Echo for realtime communication
-useEffect(() => {
-  const setupEcho = async () => {
-    const token = await AsyncStorage.getItem('token');
-    const userData = await AsyncStorage.getItem('user'); // make sure you save this on login
-    const user = userData ? JSON.parse(userData) : null;
+  // 🧠 Load current user
+  useEffect(() => {
+    (async () => {
+      const user = JSON.parse(await AsyncStorage.getItem('user'));
+      setResidentId(user?.id);
+    })();
+  }, []);
 
-    if (!token || !user) {
-      console.warn('Missing token or user for Echo');
-      return;
-    }
+  // 🎙 Request microphone permission (Android)
+  useEffect(() => {
+    PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+  }, []);
 
-    window.Pusher = Pusher;
-    const echoInstance = new Echo({
-      broadcaster: 'pusher',
-      key: process.env.EXPO_PUBLIC_ABLY_KEY || 'Z7uLMg.REYhzw:hof5nkSunzzn7bPHjogkZ47jPiSHlAZwZ1Sm5gIFxUU',
-      wsHost: 'realtime-pusher.ably.io',
-      wsPort: 443,
-      wssPort: 443,
-      forceTLS: true,
-      disableStats: true,
-      cluster: 'mt1',
-      authEndpoint: `${config.API_BASE_URL}/broadcasting/auth`,
-      auth: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      },
+  // 🧩 Setup Agora engine
+  const initAgoraEngine = async (appID) => {
+    const agoraEngine = await RtcEngine.create(appID);
+    await agoraEngine.setChannelProfile(ChannelProfile.LiveBroadcasting);
+    await agoraEngine.setClientRole(ClientRole.Broadcaster);
+
+    // Handle events
+    agoraEngine.addListener('JoinChannelSuccess', () => {
+      console.log('✅ Joined channel successfully');
+      setCallStatus('connected');
     });
 
-    setEcho(echoInstance);
+    agoraEngine.addListener('UserOffline', () => {
+      console.log('🚪 Dispatcher left the call');
+      handleCallEnded();
+    });
 
-    // 🔥 Listen to private resident channel (for this logged-in user)
-    echoInstance.private(`resident.${user.id}`)
-      .listen('.CallAccepted', (data) => {
-        console.log('Call accepted:', data);
-        setCallStatus('connected');
-        Alert.alert('Call Accepted', 'Dispatcher has joined the call!');
-        startCallTimer();
-      })
-      .listen('.CallEnded', (data) => {
-        console.log('Call ended:', data);
-        handleEndCall();
-        Alert.alert('Call Ended', 'Dispatcher has ended the call.');
-      });
+    setEngine(agoraEngine);
+    return agoraEngine;
   };
 
-  setupEcho();
+  // 🔄 Poll API for call acceptance
+  useEffect(() => {
+    let interval;
+    if (callStatus === 'calling') {
+      interval = setInterval(async () => {
+        try {
+          const res = await apiFetch(`${config.API_BASE_URL}/api/incidents/${incidentId}/status`);
+          if (res.status === 'accepted') {
+            clearInterval(interval);
+            handleCallAccepted(res.agora);
+          } else if (res.status === 'ended') {
+            clearInterval(interval);
+            handleCallEnded();
+          }
+        } catch (err) {
+          console.log('Status check error:', err);
+        }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [callStatus]);
 
-  return () => {
-    if (echo) echo.disconnect();
-    if (timerRef.current) clearInterval(timerRef.current);
-  };
-}, []);
-
-
-   2
-
-  const handleEndCall = async () => {
+  // 🎧 When dispatcher accepts call
+  const handleCallAccepted = async (agoraData) => {
     try {
-      if (callStatus !== 'connected' && callStatus !== 'calling') return;
+      setCallStatus('connecting');
+      const { appID, token, channelName, uid } = agoraData;
+      if (!appID || !channelName || uid == null) {
+        Alert.alert('Call Error', 'Missing Agora connection info.');
+        return;
+      }
 
-      const token = await AsyncStorage.getItem('token');
-      await fetch(`${config.API_BASE_URL}/api/emergency-call/end`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          duration: callDuration,
-          endTime: new Date().toISOString(),
-        }),
-      });
-
-      setCallStatus('ended');
-      clearInterval(timerRef.current);
-      setCallDuration(0);
-
-      setTimeout(() => {
-        navigation.navigate('Waiting', {
-          incidentType,
-          callDuration,
-          timestamp: new Date().toISOString(),
-        });
-      }, 2000);
-    } catch (error) {
-      console.error('Error ending call:', error);
+      const agoraEngine = await initAgoraEngine(appID);
+      await agoraEngine.joinChannel(token, channelName, null, uid);
+      console.log('🎙 Joined Agora voice channel');
+    } catch (err) {
+      console.error('Agora connect error:', err);
+      Alert.alert('Error', 'Failed to connect audio.');
     }
   };
 
-  const startCallTimer = () => {
-    timerRef.current = setInterval(() => {
-      setCallDuration(prev => prev + 1);
-    }, 1000);
+  // ⏱ Timer
+  useEffect(() => {
+    if (callStatus === 'connected') startTimer();
+    else clearTimer();
+    return () => clearTimer();
+  }, [callStatus]);
+
+  const startTimer = () => {
+    clearTimer();
+    timerRef.current = setInterval(() => setCallDuration((p) => p + 1), 1000);
+  };
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
   };
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  // 🚪 End call manually
+  const handleEndCall = async () => {
+    try {
+      await apiFetch(`${config.API_BASE_URL}/api/incidents/calls/${incidentId}/end`, {
+        method: 'POST',
+        body: JSON.stringify({ endedBy: residentId }),
+      });
+    } catch (err) {
+      console.warn('Failed to notify backend:', err);
+    }
+
+    await cleanupAgora();
+    setCallStatus('ended');
   };
 
+  // 🧹 Clean up Agora
+  const cleanupAgora = async () => {
+    if (engine) {
+      await engine.leaveChannel();
+      engine.destroy();
+      setEngine(null);
+    }
+  };
+
+  const handleCallEnded = async () => {
+    await cleanupAgora();
+    setCallStatus('ended');
+  };
+
+  const formatTime = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  };
+    
   return (
-    <View style={styles.callContainer}>
-      <View style={styles.contentScroll}>
-        <View style={styles.callInterface}>
-          <View style={styles.callMenu}>
-            <TouchableOpacity style={styles.menuButton}>
-              <Text style={styles.menuDots}>⋮</Text>
-            </TouchableOpacity>
-          </View>
+    <View style={styles.container}>
+      <Text style={styles.title}>MDRRMO</Text>
+      {callStatus === 'calling' && <Text style={styles.status}>Calling...</Text>}
+      {callStatus === 'connected' && <Text style={styles.timer}>{formatTime(callDuration)}</Text>}
+      {callStatus === 'ended' && <Text style={styles.status}>Call Ended</Text>}
 
-          <View style={styles.callInfo}>
-            <Text style={styles.callerName}>MDRRMO</Text>
-            {callStatus === 'connected' && (
-              <Text style={styles.callDuration}>{formatTime(callDuration)}</Text>
-            )}
-            {callStatus === 'calling' && (
-              <Text style={styles.callStatusText}>Connecting...</Text>
-            )}
-            {callStatus === 'idle' && (
-              <Text style={styles.callStatusText}>Ready to call</Text>
-            )}
-          </View>
+      {callStatus !== 'ended' && (
+        <TouchableOpacity style={styles.endButton} onPress={handleEndCall}>
+          <Image source={endCallIcon} style={styles.endIcon} />
+          <Text style={styles.endText}>End Call</Text>
+        </TouchableOpacity>
+      )}
 
-          <View style={styles.callControls}>
-            <View style={styles.singleControlRow}>
-              <View style={styles.endCallWrapper}>
-                <TouchableOpacity
-                  style={[styles.endCallButton]}
-                  onPress={callStatus === 'idle' ? handleStartCall : handleEndCall}
-                >
-                  <Image
-                    source={require('../../assets/endcall.png')}
-                    style={styles.controlImage}
-                    resizeMode="contain"
-                  />
-                </TouchableOpacity>
-                <Text style={styles.controlLabel}>
-                  {callStatus === 'idle' ? 'Start Call' : 'End Call'}
-                </Text>
-              </View>
+      <Modal visible={showUnansweredModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Call Unanswered</Text>
+            <Text style={styles.modalText}>
+              The dispatcher failed to accept your call. You can try again or wait for updates.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.primary]}
+                onPress={() => {
+                  setShowUnansweredModal(false);
+                  navigation.navigate('Report');
+                }}
+              >
+                <Text style={styles.modalButtonText}>Call Again</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.secondary]}
+                onPress={() => {
+                  setShowUnansweredModal(false);
+                  navigation.navigate('Dashboard');
+                }}
+              >
+                <Text style={styles.modalButtonText}>Wait for Update</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
-      </View>
+      </Modal>
     </View>
   );
-};
-
+}
 const styles = StyleSheet.create({
   callContainer: {
-    backgroundColor: '#1a237e',
+    flex: 1,
+    backgroundColor: '#25597c',
     minHeight: '100%',
     position: 'relative',
   },
@@ -187,18 +213,6 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
     marginTop: 20,
-  },
-  callMenu: {
-    alignSelf: 'flex-end',
-    marginBottom: 30,
-  },
-  menuButton: {
-    padding: 10,
-  },
-  menuDots: {
-    color: '#e53935',
-    fontSize: 28,
-    fontWeight: 'bold',
   },
   callInfo: {
     alignItems: 'center',
@@ -224,15 +238,11 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: 30,
   },
-  singleControlRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  endCallWrapper: {
+  controlButton: {
     alignItems: 'center',
     marginTop: 20,
   },
-  endCallButton: {
+  controlIcon: {
     backgroundColor: '#d6dbe6',
     width: 72,
     height: 72,
@@ -240,7 +250,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  controlImage: {
+  controlImg: {
     width: 26,
     height: 26,
   },

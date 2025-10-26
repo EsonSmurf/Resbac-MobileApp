@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.yourcompany.mobileapp'
+    namespace 'com.eson15.MobileApp'
     defaultConfig {
-        applicationId 'com.yourcompany.mobileapp'
+        applicationId 'com.eson15.MobileApp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

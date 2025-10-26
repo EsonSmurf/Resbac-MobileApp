@@ -82,7 +82,7 @@ const handleSubmit = async () => {
 };
 
   const backgroundImage = require('../../assets/background.jpg');
-  const logoImage = require('../../assets/logo.jpg');
+  const logoImage = require('../../assets/LogoB.png');
 
   return (
     <ImageBackground source={backgroundImage} style={styles.background} resizeMode="cover">
@@ -110,6 +110,7 @@ const handleSubmit = async () => {
           ))}
 
           {/* Buttons */}
+          
           {ACTION_BUTTONS.login.map((button) => (
             <TouchableOpacity
               key={button.key}
@@ -121,15 +122,19 @@ const handleSubmit = async () => {
               onPress={button.key === 'login' ? handleSubmit : button.onPress}
               disabled={isLoading}
             >
-              <Text style={[
+              
+              <Text 
+              style={[
                 styles.buttonText,
                 button.style === 'primary' ? styles.primaryButtonText : styles.textButtonText,
                 isLoading && styles.disabledButtonText
               ]}>
                 {isLoading ? 'Logging in...' : button.text}
+                
               </Text>
             </TouchableOpacity>
           ))}
+          
 
           {/* Signup Link */}
           <View style={styles.signupContainer}>
@@ -137,6 +142,7 @@ const handleSubmit = async () => {
             <TouchableOpacity onPress={() => navigation.navigate('Registration')} disabled={isLoading}>
               <Text style={styles.signupLink}> Sign Up</Text>
             </TouchableOpacity>
+            
           </View>
         </View>
       </View>
@@ -220,7 +226,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   primaryButton: {
-    backgroundColor: '#0a2c6b',
+    backgroundColor: '#25597c',
   },
   disabledButton: {
     backgroundColor: '#ccc',

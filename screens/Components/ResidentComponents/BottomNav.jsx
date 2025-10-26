@@ -37,7 +37,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    backgroundColor: '#1041BC',
+    backgroundColor: '#25597c',
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     height: 70, // Increased height for better visibility

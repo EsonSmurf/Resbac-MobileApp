@@ -1,64 +1,227 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, TextInput, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, Alert, ScrollView } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Header from '../Components/ResidentComponents/Header';
 import BottomNav from '../Components/ResidentComponents/BottomNav';
+import { apiFetch } from '../../utils/apiFetch';
+import config from '../../utils/config';
 
-const { width } = Dimensions.get('window');
+const DEFAULT_PROFILE = 'https://static.vecteezy.com/system/resources/previews/021/548/095/original/default-profile-picture-avatar-user-avatar-icon-person-icon-head-icon-profile-picture-icons-default-anonymous-user-male-and-female-businessman-photo-placeholder-social-network-avatar-portrait-free-vector.jpg';
 
 const EditProfile = ({ navigation }) => {
-  const userAvatar = require('../../assets/user.png');
-  const backButtonImg = require('../../assets/backbutton.png');
-
-  // State for form fields (empty, backend-ready)
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [address, setAddress] = useState('');
-  const [userId] = useState(''); // User ID is disabled and empty
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [age, setAge] = useState('');
+  const [birthdate, setBirthdate] = useState('');
+  const [profileImage, setProfileImage] = useState('');
+  const [selectedImageUri, setSelectedImageUri] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  // Placeholder save handler (backend logic to be added)
-  const handleSave = () => {
-    // TODO: Integrate with backend
-    navigation.goBack();
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const userData = await AsyncStorage.getItem('user');
+      if (!userData) {
+        navigation.navigate('Login');
+        return;
+      }
+
+      const user = JSON.parse(userData);
+      const token = await AsyncStorage.getItem('token');
+
+      const res = await fetch(`${config.API_BASE_URL}/api/residents/${user.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!res.ok) throw new Error('Failed to fetch profile');
+      const data = await res.json();
+
+      setFirstName(data.first_name || '');
+      setLastName(data.last_name || '');
+      setAddress(data.address || '');
+      setEmail(data.email || '');
+      setPhone(data.contact_num || '');
+      setAge(data.age || '');
+      setBirthdate(data.birthdate || '');
+      setProfileImage(data.profile_image_url || '');
+    } catch (err) {
+      console.error('Failed to fetch profile:', err);
+      Alert.alert('Error', 'Failed to load profile data');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Permission to access camera roll is required!');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setSelectedImageUri(result.assets[0].uri);
+      setProfileImage(result.assets[0].uri);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+
+    try {
+      const userData = await AsyncStorage.getItem('user');
+      const user = JSON.parse(userData);
+      const token = await AsyncStorage.getItem('token');
+
+      const updatedData = {
+        first_name: firstName,
+        last_name: lastName,
+        address,
+        email,
+        contact_num: phone,
+        age,
+        birthdate,
+      };
+
+      // Update profile data
+      const resProfile = await fetch(`${config.API_BASE_URL}/api/residents/${user.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedData),
+      });
+
+      if (!resProfile.ok) throw new Error('Failed to update profile');
+
+      // Upload image if selected
+      if (selectedImageUri) {
+        const formData = new FormData();
+        formData.append('image', {
+          uri: selectedImageUri,
+          type: 'image/jpeg',
+          name: 'profile.jpg',
+        });
+
+        const resImage = await fetch(`${config.API_BASE_URL}/api/residents/profile-image`, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+          body: formData,
+        });
+
+        if (resImage.ok) {
+          const imageData = await resImage.json();
+          console.log('Uploaded image:', imageData);
+        }
+      }
+
+      // Update local storage
+      const updatedUser = { ...user, ...updatedData, profile_image_url: profileImage };
+      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+
+      Alert.alert('Success', 'Profile updated successfully!');
+      navigation.goBack();
+
+    } catch (err) {
+      console.error('Save error:', err);
+      Alert.alert('Error', 'Failed to update profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const profileImageUrl = profileImage
+    ? profileImage.startsWith('http') || profileImage.startsWith('file://')
+      ? profileImage
+      : `${config.API_BASE_URL}${profileImage}`
+    : DEFAULT_PROFILE;
+
+  if (loading) {
+    return (
+      <View style={styles.editProfileContainer}>
+        <Header navigation={navigation} />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+        <BottomNav navigation={navigation} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.editProfileContainer}>
-      {/* Header */}
       <Header navigation={navigation} />
       
-      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled">
-        {/* Title row with back button and Edit Profile text */}
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.titleRow}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Image source={backButtonImg} style={styles.backButtonImg} />
+            <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Edit Profile</Text>
         </View>
-        
-        {/* Avatar Card */}
+
         <View style={styles.avatarCard}>
           <View style={styles.profileAvatar}>
-            <Image source={userAvatar} style={styles.avatarImage} />
+            <Image
+              source={{ uri: profileImageUrl }}
+              style={styles.profileImg}
+              defaultSource={{ uri: DEFAULT_PROFILE }}
+            />
           </View>
-          <Text style={styles.profileName}>{fullName || ' '}</Text>
-          <TouchableOpacity style={styles.changePhotoBtn}>
+          <Text style={styles.profileName}>
+            {firstName} {lastName}
+          </Text>
+          <TouchableOpacity style={styles.changePhotoBtn} onPress={pickImage}>
             <Text style={styles.changePhotoText}>Change Photo</Text>
           </TouchableOpacity>
         </View>
-        
-        {/* Form Card (nested container like responder screen) */}
-        <View style={styles.formCard}>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Full Name:</Text>
-            <TextInput
-              style={styles.input}
-              value={fullName}
-              onChangeText={setFullName}
-              placeholder="Enter full name"
-            />
 
+        <View style={styles.formGroup}>
+          <View style={styles.inputRow}>
+            <View style={styles.inputField}>
+              <Text style={styles.label}>First Name:</Text>
+              <TextInput
+                style={styles.input}
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder="Enter first name"
+              />
+            </View>
+            <View style={styles.inputField}>
+              <Text style={styles.label}>Last Name:</Text>
+              <TextInput
+                style={styles.input}
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder="Enter last name"
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputField}>
             <Text style={styles.label}>Address:</Text>
             <TextInput
               style={styles.input}
@@ -66,16 +229,20 @@ const EditProfile = ({ navigation }) => {
               onChangeText={setAddress}
               placeholder="Enter address"
             />
+          </View>
 
-            <Text style={styles.label}>User ID:</Text>
+          <View style={styles.inputField}>
+            <Text style={styles.label}>Phone:</Text>
             <TextInput
-              style={styles.inputDisabled}
-              value={userId}
-              editable={false}
-              placeholder="User ID"
+              style={styles.input}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Enter phone number"
+              keyboardType="phone-pad"
             />
-            <Text style={styles.inputNote}>User ID cannot be changed</Text>
+          </View>
 
+          <View style={styles.inputField}>
             <Text style={styles.label}>Email:</Text>
             <TextInput
               style={styles.input}
@@ -85,45 +252,47 @@ const EditProfile = ({ navigation }) => {
               keyboardType="email-address"
               autoCapitalize="none"
             />
+          </View>
 
-            <View style={styles.phoneAgeRow}>
-              <View style={styles.phoneField}>
-                <Text style={styles.label}>Phone:</Text>
-                <TextInput
-                  style={styles.input}
-                  value={phone}
-                  onChangeText={setPhone}
-                  placeholder="Enter phone number"
-                  keyboardType="phone-pad"
-                />
-              </View>
-              <View style={styles.ageField}>
-                <Text style={styles.label}>Age:</Text>
-                <TextInput
-                  style={styles.input}
-                  value={age}
-                  onChangeText={setAge}
-                  placeholder="Age"
-                  keyboardType="numeric"
-                />
-              </View>
+          <View style={styles.inputRow}>
+            <View style={styles.inputField}>
+              <Text style={styles.label}>Birthdate:</Text>
+              <TextInput
+                style={styles.input}
+                value={birthdate}
+                onChangeText={setBirthdate}
+                placeholder="YYYY-MM-DD"
+              />
+            </View>
+            <View style={styles.inputField}>
+              <Text style={styles.label}>Age:</Text>
+              <TextInput
+                style={styles.input}
+                value={age}
+                onChangeText={setAge}
+                placeholder="Age"
+                keyboardType="numeric"
+              />
             </View>
           </View>
-          {/* Buttons inside the form card */}
-          <View style={styles.buttonRowCard}>
-            <TouchableOpacity style={[styles.btn, styles.btnSmall, styles.cancel]} onPress={() => navigation.goBack()}>
-              <Text style={styles.btnText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.btn, styles.btnSmall, styles.save]} onPress={handleSave}>
-              <Text style={styles.btnText}>Save</Text>
-            </TouchableOpacity>
-          </View>
         </View>
-        
-        
+
+        <View style={styles.buttonRow}>
+          <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.saveBtn, saving && styles.saveBtnDisabled]} 
+            onPress={handleSave}
+            disabled={saving}
+          >
+            <Text style={styles.saveBtnText}>
+              {saving ? 'Saving...' : 'Save'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
-      
-      {/* BOTTOM NAVIGATION */}
+
       <BottomNav navigation={navigation} />
     </View>
   );
@@ -133,199 +302,145 @@ const styles = StyleSheet.create({
   editProfileContainer: {
     flex: 1,
     backgroundColor: '#f7f8fa',
-    position: 'relative',
   },
-  scrollContainer: {
+  loadingContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  scrollContent: {
-    paddingBottom: 100,
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  scrollView: {
+    flex: 1,
+    paddingBottom: 80,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 18,
+    marginTop: 10,
+    marginBottom: 8,
     marginHorizontal: 16,
+    paddingTop: 10,
   },
   backButton: {
     marginRight: 8,
     padding: 4,
   },
-  backButtonImg: {
-    width: 28,
-    height: 28,
-    resizeMode: 'contain',
+  backButtonText: {
+    fontSize: 16,
+    color: '#e53935',
+    fontWeight: '500',
   },
   title: {
     fontSize: 22,
     fontWeight: 'bold',
     color: '#222',
-    margin: 0,
   },
   avatarCard: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#b3c6e0',
     marginHorizontal: 16,
-    marginBottom: 20,
-    padding: 24,
+    marginBottom: 16,
+    padding: 20,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   profileAvatar: {
     width: 100,
     height: 100,
     borderRadius: 50,
+    overflow: 'hidden',
     marginBottom: 12,
-    backgroundColor: '#f8f9fa',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#e9ecef',
   },
-  avatarImage: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+  profileImg: {
+    width: '100%',
+    height: '100%',
   },
   profileName: {
-    fontWeight: 'bold',
     fontSize: 18,
-    marginBottom: 8,
+    fontWeight: 'bold',
     color: '#222',
-    margin: 0,
+    marginBottom: 12,
   },
   changePhotoBtn: {
-    backgroundColor: '#1041BC',
-    borderRadius: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginTop: 8,
+    backgroundColor: '#e53935',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
   },
   changePhotoText: {
     color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 15,
+    fontSize: 14,
+    fontWeight: '500',
   },
   formGroup: {
-    marginHorizontal: 16,
-    marginBottom: 20,
-  },
-  formCard: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#b3c6e0',
     marginHorizontal: 16,
-    marginBottom: 14,
-    padding: 16,
+    marginBottom: 16,
+    padding: 20,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  inputField: {
+    flex: 1,
+    marginBottom: 16,
   },
   label: {
-    fontWeight: 'bold',
-    fontSize: 15,
-    marginBottom: 4,
-    color: '#222',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 6,
   },
   input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
     backgroundColor: '#fff',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    marginBottom: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    fontSize: 15,
-  },
-  inputDisabled: {
-    backgroundColor: '#eee',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    marginBottom: 2,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: '#888',
-  },
-  inputNote: {
-    color: '#888',
-    fontSize: 12,
-    marginBottom: 10,
-    marginLeft: 2,
-    margin: 0,
-  },
-  phoneAgeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  phoneField: {
-    flex: 1,
-    marginRight: 8,
-  },
-  ageField: {
-    flex: 0.3,
   },
   buttonRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
     marginHorizontal: 16,
-    marginTop: 20,
-    marginBottom: 50,
+    marginBottom: 20,
   },
-  buttonRowCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  btn: {
-    borderRadius: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    minWidth: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnSmall: {
-    minWidth: 0,
+  cancelBtn: {
     flex: 1,
-    marginHorizontal: 6,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
   },
-  btnText: {
-    color: '#fff',
-    fontWeight: 'bold',
+  cancelBtnText: {
     fontSize: 16,
+    fontWeight: '500',
+    color: '#666',
   },
-  save: {
-    backgroundColor: '#1041BC',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  cancel: {
+  saveBtn: {
+    flex: 1,
     backgroundColor: '#e53935',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  saveBtnDisabled: {
+    backgroundColor: '#ccc',
+  },
+  saveBtnText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#fff',
   },
 });
 
-export default EditProfile; 
+export default EditProfile;

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Header from '../Components/ResidentComponents/Header';
 import BottomNav from '../Components/ResidentComponents/BottomNav';
+import { apiFetch } from '../../utils/apiFetch';
+import config from '../../utils/config';
 
 const Waiting = ({ navigation, route }) => {
   const [emergencyReport, setEmergencyReport] = useState({
@@ -19,34 +21,26 @@ const Waiting = ({ navigation, route }) => {
     assignedDispatcher: null,
     priority: 'medium',
     callDuration: 0,
-              fromWitnessReport: false,
-          fromSOS: false,
-          fromVictim: false
+    fromWitnessReport: false,
+    fromSOS: false,
+    fromVictim: false
   });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Get data passed from the call screen
   const callData = route?.params || {};
 
-  // Simulate fetching emergency report data from backend
   useEffect(() => {
     const fetchEmergencyReport = async () => {
       setLoading(true);
       try {
-        // TODO: Replace with actual API call
-        // const response = await fetch('/api/emergency-reports/current');
-        // const data = await response.json();
-        
-        // If no call data is present, redirect to report page
         if (!callData.incidentType && !callData.fromWitnessReport && !callData.fromSOS && !callData.fromVictim) {
           console.warn('No incident data provided, redirecting to report page');
           navigation.navigate('Report');
           return;
         }
         
-        // Mock data for demonstration
         const mockData = {
           id: 'ER-2024-001',
           type: callData.incidentType || (callData.fromSOS ? 'Emergency' : callData.fromVictim ? 'Victim Report' : 'Witness Report'),
@@ -86,7 +80,6 @@ const Waiting = ({ navigation, route }) => {
     fetchEmergencyReport();
   }, [callData, navigation]);
 
-  // Function to handle canceling the emergency report
   const handleCancelReport = async () => {
     Alert.alert(
       'Cancel Emergency Report',
@@ -101,12 +94,6 @@ const Waiting = ({ navigation, route }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              // TODO: Replace with actual API call
-              // await fetch(`/api/emergency-reports/${emergencyReport.id}/cancel`, {
-              //   method: 'PUT',
-              //   headers: { 'Content-Type': 'application/json' }
-              // });
-              
               navigation.navigate('Dashboard');
             } catch (err) {
               setError('Failed to cancel emergency report');
@@ -118,21 +105,14 @@ const Waiting = ({ navigation, route }) => {
     );
   };
 
-  // Function to handle updating report status
   const handleUpdateStatus = async () => {
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/emergency-reports/${emergencyReport.id}/status`);
-      // const data = await response.json();
-      // setEmergencyReport(prev => ({ ...prev, ...data }));
-      
       console.log('Checking for status updates...');
     } catch (err) {
       console.error('Error updating status:', err);
     }
   };
 
-  // Auto-refresh status every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       if (emergencyReport.status === 'pending') {
@@ -143,18 +123,12 @@ const Waiting = ({ navigation, route }) => {
     return () => clearInterval(interval);
   }, [emergencyReport.status]);
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
   if (loading) {
     return (
       <View style={styles.waitingContainer}>
         <Header navigation={navigation} />
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#1041BC" />
+          <ActivityIndicator size="large" color="#e53935" />
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
         <BottomNav navigation={navigation} />
@@ -180,18 +154,14 @@ const Waiting = ({ navigation, route }) => {
 
   return (
     <View style={styles.waitingContainer}>
-      {/* Header */}
       <Header navigation={navigation} />
       
-      {/* Map Background */}
       <View style={styles.mapBackground}>
-        {/* Map content will be rendered here when backend API is integrated */}
         <View style={styles.mapPlaceholder}>
-          {/* TODO: Replace with actual map data from backend API */}
+          {/* Map content will be rendered here when backend API is integrated */}
         </View>
       </View>
 
-      {/* Status Card Overlay */}
       <View style={styles.statusCard}>
         <View style={styles.statusIcon}>
           <View style={styles.processingSpinner}>
@@ -218,7 +188,6 @@ const Waiting = ({ navigation, route }) => {
         </View>
       </View>
 
-      {/* Bottom Navigation */}
       <BottomNav navigation={navigation} />
     </View>
   );
@@ -349,7 +318,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   retryButton: {
-    backgroundColor: '#1041BC',
+    backgroundColor: '#e53935',
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 12,

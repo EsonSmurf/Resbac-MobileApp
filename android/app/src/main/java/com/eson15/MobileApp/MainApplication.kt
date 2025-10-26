@@ -1,4 +1,4 @@
-package com.yourcompany.mobileapp
+package com.eson15.MobileApp
 
 import android.app.Application
 import android.content.res.Configuration

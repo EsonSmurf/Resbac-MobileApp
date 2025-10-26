@@ -1,35 +1,206 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert } from 'react-native';
+import * as Location from 'expo-location'; // Keep this - it's correct
 import Header from '../Components/ResidentComponents/Header';
 import BottomNav from '../Components/ResidentComponents/BottomNav';
+import { apiFetch } from '../../utils/apiFetch';
+import config from '../../utils/config';
 
 const Report = ({ navigation }) => {
   const backButtonImg = require('../../assets/backbutton.png');
-
   const [reporterType, setReporterType] = useState('Victim');
+  const [incidentTypes, setIncidentTypes] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const incidentTypes = [
-    { label: 'Fire', color: '#ff6666' },
-    { label: 'Medical Emergency', color: '#fd3d40ff' },
-    { label: 'Disaster\n(Earthquake, Floods, etc)', color: '#f96567ff' },
-    { label: 'Vehicular Accident', color: '#fca8a9ff' },
-    { label: 'Trauma', color: '#fa8789ff' },
-    { label: 'Ambulance Services', color: '#fd3d40ff' },
-  ];
-  
+  useEffect(() => {
+    const fetchAllIncidentTypes = async () => {
+      try {
+        let page = 1;
+        let allTypes = [];
+        let totalPages = 1;
+
+        do {
+          const res = await apiFetch(`${config.API_BASE_URL}/api/incident-types?page=${page}`);
+          allTypes = [...allTypes, ...res.data]; 
+          totalPages = res.last_page; 
+          page++;
+        } while (page <= totalPages);
+
+        const styledTypes = allTypes.map((type) => {
+          let color = '#c94c4c';
+          let fontColor = '#222';
+          if (type.priority) {
+            switch (type.priority.priority_level) {
+              case 4: color = '#ac3737ff'; fontColor = '#fff'; break; 
+              case 3: color = '#c94c4c'; break; 
+              case 2: color = '#dc6b6bff'; break; 
+              case 1: color = '#e59595'; break; 
+            }
+          }
+          return { ...type, color, fontColor };
+        });
+
+        setIncidentTypes(styledTypes);
+      } catch (err) {
+        console.error("Failed to fetch incident types:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAllIncidentTypes();
+  }, []);
+
+  const mapIncidentLabelToId = (label) => {
+    const found = incidentTypes.find((type) => type.name === label);
+    return found ? found.id : null;
+  };
+
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      console.log('Location permission status:', status);
+      return status === 'granted';
+    } catch (err) {
+      console.warn('Permission request error:', err);
+      return false;
+    }
+  };
+
+  const getCurrentLocation = async () => {
+    try {
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+        timeout: 10000,
+        maximumAge: 60000,
+      });
+      console.log('Location obtained:', location.coords);
+      return location.coords;
+    } catch (err) {
+      console.error('Location error:', err);
+      throw err;
+    }
+  };
+
+  const handleIncidentClick = async (incidentType) => {
+    console.log('Incident clicked:', incidentType.name);
+    
+    if (reporterType === "Witness") {
+      const hasPermission = await requestLocationPermission();
+      console.log('Witness permission granted:', hasPermission);
+      
+      if (!hasPermission) {
+        Alert.alert("Location Permission", "Location access is required to report incidents.");
+        return;
+      }
+
+      try {
+        const coords = await getCurrentLocation();
+        const latitude = coords.latitude;
+        const longitude = coords.longitude;
+
+        navigation.navigate('WitnessReport', {
+          incidentType: incidentType.name,
+          incidentTypeId: mapIncidentLabelToId(incidentType.name),
+          latitude,
+          longitude
+        });
+      } catch (err) {
+        console.error("Geolocation error:", err);
+        Alert.alert("Location Error", "Failed to detect your location. The map will default to Bocaue.");
+        navigation.navigate('WitnessReport', {
+          incidentType: incidentType.name,
+          incidentTypeId: mapIncidentLabelToId(incidentType.name)
+        });
+      }
+      return;
+    }
+
+    try {
+      const hasPermission = await requestLocationPermission();
+      console.log('Victim permission granted:', hasPermission);
+      
+      if (!hasPermission) {
+        Alert.alert("Location Permission", "Location access is required to report incidents.");
+        return;
+      }
+
+      const coords = await getCurrentLocation();
+      const latitude = coords.latitude;
+      const longitude = coords.longitude;
+
+      const payload = {
+        incident_type_id: mapIncidentLabelToId(incidentType.name),
+        reporter_type: reporterType.toLowerCase(),
+        latitude,
+        longitude,
+        description: null,
+      };
+
+      console.log('Sending payload:', payload);
+
+      try {
+        const data = await apiFetch(`${config.API_BASE_URL}/api/incidents/from-resident`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        console.log("Incident created:", data);
+
+        if (data.duplicate_of) {
+          Alert.alert(
+            "Report Acknowledged",
+            "Your report has been acknowledged! " +
+            "It seems this incident was already reported, so we've added you as a duplicate reporter. " +
+            "Thank you for helping keep the community safe."
+          );
+
+          navigation.navigate('Dashboard', {
+            duplicateOf: data.duplicate_of,
+            duplicates: data.duplicates
+          });
+          return;
+        }
+
+        if (reporterType === "Victim") {
+          navigation.navigate('Call', { 
+            incidentType: incidentType.name, 
+            incident: data.incident 
+          });
+        }
+      } catch (error) {
+        console.error("Error creating incident:", error);
+        Alert.alert("Error", "Failed to report incident. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error creating incident:", error);
+      Alert.alert("Error", "Failed to report incident. Please try again.");
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.reportContainer}>
+        <Header navigation={navigation} />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading incident types...</Text>
+        </View>
+        <BottomNav navigation={navigation} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.reportContainer}>
-      {/* Header */}
       <Header navigation={navigation} />
       
       <View style={styles.titleRow}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Image source={backButtonImg} style={styles.backButtonIcon} />
         </TouchableOpacity>
-        <Text style={styles.title}>Report Incident</Text>
+        <Text style={styles.title}>Report</Text>
       </View>
-      
-      {/* Reporter Type Toggle */}
+
       <View style={styles.toggleRow}>
         <Text style={styles.toggleLabel}>Reporter Type:</Text>
         <TouchableOpacity
@@ -46,35 +217,23 @@ const Report = ({ navigation }) => {
         </TouchableOpacity>
       </View>
       
-      {/* Incident Type Container */}
       <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.incidentContainer}>
           <Text style={styles.incidentLabel}>Incident Type:</Text>
           <View style={styles.incidentGrid}>
-            {incidentTypes.map((item, idx) => (
+            {incidentTypes.map((item) => (
               <TouchableOpacity
-                key={idx}
+                key={item.id}
                 style={[styles.incidentButton, { backgroundColor: item.color }]}
-                onPress={() => {
-                  if (reporterType === 'Witness') {
-                    navigation.navigate('WitnessReport', { incidentType: item.label });
-                  } else {
-                    // Victim flow - navigate directly to Call screen
-                    navigation.navigate('Call', { 
-                      incidentType: item.label,
-                      fromVictim: true 
-                    });
-                  }
-                }}
+                onPress={() => handleIncidentClick(item)}
               >
-                <Text style={styles.incidentButtonText}>{item.label}</Text>
+                <Text style={[styles.incidentButtonText, { color: item.fontColor }]}>{item.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
       </ScrollView>
       
-      {/* Bottom Navigation */}
       <BottomNav navigation={navigation} />
     </View>
   );
@@ -85,6 +244,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f7f8fa',
     position: 'relative',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
   },
   titleRow: {
     flexDirection: 'row',
@@ -107,7 +275,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     color: '#222',
-    margin: 0,
   },
   toggleRow: {
     flexDirection: 'row',
@@ -189,7 +356,6 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   incidentButtonText: {
-    color: '#222',
     fontWeight: 'bold',
     fontSize: 16,
     textAlign: 'center',
@@ -197,4 +363,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default Report; 
+export default Report;

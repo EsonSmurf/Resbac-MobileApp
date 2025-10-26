@@ -1,4 +1,4 @@
-package com.yourcompany.mobileapp
+package com.eson15.MobileApp
 
 import android.os.Build
 import android.os.Bundle

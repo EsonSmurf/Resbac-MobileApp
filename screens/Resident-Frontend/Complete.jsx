@@ -1,100 +1,71 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import Header from '../Components/ResidentComponents/Header';
 import BottomNav from '../Components/ResidentComponents/BottomNav';
 
-function Complete({ navigation, route }) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
+const Complete = ({ navigation, route }) => {
+  const [loading, setLoading] = useState(true);
+  const [completionData, setCompletionData] = useState({
+    responderName: 'Emergency Response Team',
+    arrivalTime: new Date().toLocaleTimeString(),
+    incidentType: route?.params?.incidentType || 'Emergency',
+    location: 'Your Location'
+  });
 
   useEffect(() => {
-    // Slide up animation
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
+    // Simulate loading completion data
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
 
-    // Fade in animation
-    Animated.timing(opacityAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-
-    // Pulse animation for success circle
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    pulseAnimation.start();
-
-    return () => {
-      pulseAnimation.stop();
-    };
+    return () => clearTimeout(timer);
   }, []);
+
+  if (loading) {
+    return (
+      <View style={styles.completeContainer}>
+        <Header navigation={navigation} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Finalizing response...</Text>
+        </View>
+        <BottomNav navigation={navigation} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.completeContainer}>
-      {/* Header */}
       <Header navigation={navigation} />
       
       {/* Map Background */}
       <View style={styles.mapBackground}>
-        {/* Map content will be rendered here when backend API is integrated */}
         <View style={styles.mapPlaceholder}>
-          {/* TODO: Replace with actual map tiles or API integration */}
+          {/* Map content will be rendered here when backend API is integrated */}
         </View>
       </View>
 
       {/* Completion Status Card Overlay */}
-      <Animated.View 
-        style={[
-          styles.statusCard,
-          {
-            transform: [{ translateY: slideAnim }],
-            opacity: opacityAnim,
-          }
-        ]}
-      >
+      <View style={styles.statusCard}>
         <View style={styles.statusContent}>
           <View style={styles.completionIcon}>
-            <Animated.View 
-              style={[
-                styles.successCircle,
-                {
-                  transform: [{ scale: pulseAnim }],
-                }
-              ]}
-            >
+            <View style={styles.successCircle}>
               <Text style={styles.checkmark}>✓</Text>
-            </Animated.View>
+            </View>
           </View>
           <View style={styles.completionMessage}>
-            <Text style={styles.completionText}>
-              The responder has reached your location
+            <Text style={styles.completionText}>The responder has reached your location</Text>
+            <Text style={styles.completionSubtext}>
+              {completionData.responderName} arrived at {completionData.arrivalTime}
             </Text>
           </View>
         </View>
-      </Animated.View>
+      </View>
 
-      {/* Bottom Navigation */}
       <BottomNav navigation={navigation} />
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   completeContainer: {
@@ -102,6 +73,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f8fa',
     minHeight: '100%',
     position: 'relative',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
   },
   mapBackground: {
     position: 'absolute',
@@ -120,13 +101,13 @@ const styles = StyleSheet.create({
   },
   statusCard: {
     position: 'absolute',
-    bottom: 80,
+    bottom: 120,
     left: '5%',
     right: '5%',
-    backgroundColor: 'white',
-    borderRadius: 20,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
+    backgroundColor: '#f8f8f8',
+    borderRadius: 30,
+    padding: 36,
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -138,18 +119,17 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   statusContent: {
-    gap: 16,
     alignItems: 'center',
+    gap: 20,
   },
   completionIcon: {
-    alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   successCircle: {
-    width: 60,
-    height: 60,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: '#4CAF50',
-    borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#4CAF50',
@@ -158,25 +138,28 @@ const styles = StyleSheet.create({
       height: 4,
     },
     shadowOpacity: 0.3,
-    shadowRadius: 12,
+    shadowRadius: 8,
     elevation: 8,
   },
   checkmark: {
+    fontSize: 40,
     color: 'white',
-    fontSize: 32,
     fontWeight: 'bold',
-    lineHeight: 32,
   },
   completionMessage: {
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
   },
   completionText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     color: '#333',
     textAlign: 'center',
-    lineHeight: 22,
+  },
+  completionSubtext: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
 });
 
